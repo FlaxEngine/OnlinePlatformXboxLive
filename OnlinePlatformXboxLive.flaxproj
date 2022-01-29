@@ -1,0 +1,14 @@
+{
+  "Name": "Online Platform Xbox Live",
+  "Version": "1.0",
+  "MinEngineVersion": "1.3",
+  "Company": "Flax",
+  "Copyright": "Copyright (c) 2012-2022 Wojciech Figat. All rights reserved.",
+  "GameTarget": "OnlinePlatformXboxLiveTarget",
+  "EditorTarget": "OnlinePlatformXboxLiveEditorTarget",
+  "References": [
+    {
+      "Name": "$(EnginePath)/Flax.flaxproj"
+    }
+  ]
+}
