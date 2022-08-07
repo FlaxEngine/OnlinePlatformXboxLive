@@ -12,16 +12,21 @@ namespace FlaxEngine.Online.XboxLive
     /// </summary>
     public sealed class XboxLiveEditorPlugin : EditorPlugin
     {
-        /// <inheritdoc />
-        public override PluginDescription Description => new PluginDescription
+        /// <summary>
+        /// Initializes a new instance of the <see cref="XboxLiveEditorPlugin"/> class.
+        /// </summary>
+        public XboxLiveEditorPlugin()
         {
-            Name = "Xbox Live",
-            Category = "Online",
-            Description = "Online platform implementation for Xbox Live.",
-            Author = "Flax",
-            RepositoryUrl = "https://github.com/FlaxEngine/OnlinePlatformXboxLive",
-            Version = new Version(1, 0),
-        };
+            _description = new PluginDescription
+            {
+                Name = "Xbox Live",
+                Category = "Online",
+                Description = "Online platform implementation for Xbox Live.",
+                Author = "Flax",
+                RepositoryUrl = "https://github.com/FlaxEngine/OnlinePlatformXboxLive",
+                Version = new Version(1, 0),
+            };
+        }
     }
 }
 
