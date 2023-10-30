@@ -53,7 +53,7 @@ Finally you can use Xbox Live as online platform in your game:
 using FlaxEngine.Online;
 using FlaxEngine.Online.XboxLive;
 
-var platform = platform = new OnlinePlatformXboxLive();
+var platform = new OnlinePlatformXboxLive();
 Online.Initialize(platform);
 ```
 
