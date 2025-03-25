@@ -6,9 +6,10 @@
 #include "Engine/Core/Log.h"
 #include "Engine/Core/Types/TimeSpan.h"
 #include "Engine/Core/Collections/Array.h"
-#include "Engine/Engine/Engine.h"
-#include "Engine/Platform/User.h"
 #include "Engine/Core/Config/PlatformSettings.h"
+#include "Engine/Engine/Engine.h"
+#include "Engine/Profiler/ProfilerCPU.h"
+#include "Engine/Platform/User.h"
 #include "Engine/Platform/Win32/IncludeWindowsHeaders.h"
 #include <XGameRuntime.h>
 #include <xsapi-c/services_c.h>
@@ -84,9 +85,19 @@ struct XblFriendsContext : XblSyncContext
     int32 Iteration = 0;
 };
 
+struct XblLeaderboardsContext : XblSyncContext
+{
+    XblContextHandle Context;
+    StringAnsi Name;
+    XblLeaderboardQuery Query = {};
+    Array<OnlineLeaderboardEntry>* Entries = nullptr;
+};
+
 // Waits for the async Xbox Live task to be processed in a sync manner
 bool XblSyncWait(const XblSyncContext& context, XTaskQueueObject* taskQueue)
 {
+    PROFILE_CPU();
+
     // Throttle this thread to wait for the context to be deactivated
     while (XTaskQueueDispatch(taskQueue, XTaskQueuePort::Completion, 0) && context.Active)
         Platform::Sleep(1);
@@ -96,6 +107,8 @@ bool XblSyncWait(const XblSyncContext& context, XTaskQueueObject* taskQueue)
 // Waits for the async Xbox Live task to be processed in a sync manner
 bool XblSyncWait(XAsyncBlock& ab, XTaskQueueObject* taskQueue)
 {
+    PROFILE_CPU();
+
     // Throttle this thread to wait for the async task to be executed
     HRESULT result;
     while ((result = XAsyncGetStatus(&ab, false)) == E_PENDING)
@@ -119,6 +132,7 @@ void XblGetAchievement(const XblAchievement& achievement, OnlineAchievement& res
 
 void CALLBACK OnGetAchievements(_In_ XAsyncBlock* ab)
 {
+    PROFILE_CPU();
     XblAchievementsContext* achievementsContext = (XblAchievementsContext*)ab->context;
     XblAchievementsResultHandle achievementsResultHandle = nullptr;
     HRESULT result;
@@ -233,6 +247,7 @@ void XblGetStat(const XblStatistic& statistic, float& result)
 
 void CALLBACK OnGetStat(_In_ XAsyncBlock* ab)
 {
+    PROFILE_CPU();
     XblStatsContext* statsContext = (XblStatsContext*)ab->context;
     Array<uint8_t> buffer;
     size_t size = 0;
@@ -261,6 +276,7 @@ void CALLBACK OnGetStat(_In_ XAsyncBlock* ab)
 
 void CALLBACK OnGetPresence(_In_ XAsyncBlock* ab)
 {
+    PROFILE_CPU();
     XblPresenceContext* presenceContext = (XblPresenceContext*)ab->context;
     XblPresenceRecordHandle presenceRecord;
     HRESULT result = XblPresenceGetPresenceResult(ab, &presenceRecord);
@@ -298,6 +314,7 @@ void CALLBACK OnGetPresence(_In_ XAsyncBlock* ab)
 
 void CALLBACK OnGetFriendsIds(_In_ XAsyncBlock* ab)
 {
+    PROFILE_CPU();
     XblFriendsContext* friendsContext = (XblFriendsContext*)ab->context;
     XblSocialRelationshipResultHandle socialRelationship;
     HRESULT result;
@@ -365,6 +382,7 @@ void CALLBACK OnGetFriendsIds(_In_ XAsyncBlock* ab)
 
 void CALLBACK OnGetFriendsProfiles(_In_ XAsyncBlock* ab)
 {
+    PROFILE_CPU();
     XblFriendsContext* friendsContext = (XblFriendsContext*)ab->context;
     size_t profileCount;
     HRESULT result = XblProfileGetUserProfilesResultCount(ab, &profileCount);
@@ -400,6 +418,54 @@ void CALLBACK OnGetFriendsProfiles(_In_ XAsyncBlock* ab)
     friendsContext->Active = false;
 }
 
+void CALLBACK OnGetLeaderboard(_In_ XAsyncBlock* ab)
+{
+    PROFILE_CPU();
+    XblLeaderboardsContext* context = (XblLeaderboardsContext*)ab->context;
+    size_t resultSizeInBytes;
+    HRESULT result = XblLeaderboardGetLeaderboardResultSize(ab, &resultSizeInBytes);
+    XBOX_LIVE_LOG("XblLeaderboardGetLeaderboardResultSize");
+    if (SUCCEEDED(result))
+    {
+        void* results = Allocator::Allocate(resultSizeInBytes);
+        XblLeaderboardResult* leaderboard = nullptr;
+        result = XblLeaderboardGetLeaderboardResult(ab, resultSizeInBytes, results, &leaderboard, nullptr);
+        XBOX_LIVE_LOG("XblLeaderboardGetLeaderboardResult");
+        if (SUCCEEDED(result))
+        {
+            context->Entries->Resize((int32)leaderboard->rowsCount);
+            for (size_t i = 0u; i < leaderboard->rowsCount; i++)
+            {
+                const XblLeaderboardRow& row = leaderboard->rows[i];
+                OnlineLeaderboardEntry& entry = context->Entries->At((int32)i);
+
+                entry.User.Id = GetUserId(row.xboxUserId);
+                entry.User.Name.SetUTF8(row.modernGamertag, StringUtils::Length(row.modernGamertag));
+                entry.User.PresenceState = OnlinePresenceStates::Offline;
+                entry.Rank = (int32)row.globalRank;
+                entry.Score = 0;
+                if (row.columnValuesCount != 0 && row.columnValues)
+                {
+                    StringUtils::Parse(row.columnValues[0], &entry.Score);
+                }
+            }
+            // TODO: support next results page via XblLeaderboardResultGetNextAsync and XblLeaderboardResultGetNextResult
+        }
+        Allocator::Free(results);
+        if (SUCCEEDED(result))
+        {
+            // Done
+            context->Failed = false;
+            context->Active = false;
+            return;
+        }
+    }
+
+    // Failed
+    context->Failed = true;
+    context->Active = false;
+}
+
 OnlinePlatformXboxLive::OnlinePlatformXboxLive(const SpawnParams& params)
     : ScriptingObject(params)
 {
@@ -431,6 +497,15 @@ bool OnlinePlatformXboxLive::Initialize()
     _titleId = titleId;
     Engine::LateUpdate.Bind<OnlinePlatformXboxLive, &OnlinePlatformXboxLive::OnUpdate>(this);
 
+#if !BUILD_RELEASE
+    // Debugging
+    if (settings->DebugXboxLive)
+    {
+        HCSettingsSetTraceLevel(HCTraceLevel::Verbose);
+        HCTraceSetTraceToDebugger(true);
+    }
+#endif
+
     return false;
 }
 
@@ -443,7 +518,7 @@ void OnlinePlatformXboxLive::Deinitialize()
         XblContextCloseHandle(e.Value);
     _users.Clear();
     Engine::LateUpdate.Unbind<OnlinePlatformXboxLive, &OnlinePlatformXboxLive::OnUpdate>(this);
-    static XAsyncBlock emptyBlock{ nullptr, nullptr, nullptr };
+    static XAsyncBlock emptyBlock{nullptr, nullptr, nullptr};
     XblCleanupAsync(&emptyBlock);
     if (_taskQueue)
     {
@@ -605,6 +680,7 @@ bool OnlinePlatformXboxLive::UnlockAchievementProgress(const StringView& name, f
 bool OnlinePlatformXboxLive::ResetAchievements(User* localUser)
 {
     // Not supported
+    LOG(Warning, "OnlinePlatformXboxLive::ResetAchievements is not supported");
     return true;
 }
 
@@ -654,8 +730,96 @@ bool OnlinePlatformXboxLive::SetStat(const StringView& name, float value, User* 
     return true;
 }
 
+bool OnlinePlatformXboxLive::GetLeaderboard(const StringView& name, OnlineLeaderboard& value, User* localUser)
+{
+    XblContextHandle context;
+    if (GetContext(localUser, context))
+    {
+        value.Identifier = String::Format(TEXT("{}|{}"), name, (uintptr)localUser);
+        // TODO: fetch leaderboards metadata
+        return false;
+    }
+    return true;
+}
+
+bool OnlinePlatformXboxLive::GetOrCreateLeaderboard(const StringView& name, OnlineLeaderboardSortModes sortMode, OnlineLeaderboardValueFormats valueFormat, OnlineLeaderboard& value, User* localUser)
+{
+    // Creating leaderboards is not supported from game
+    return GetLeaderboard(name, value, localUser);
+}
+
+bool OnlinePlatformXboxLive::GetLeaderboardEntries(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries, int32 start, int32 count)
+{
+    XblLeaderboardsContext context;
+    if (GetLeaderboardContext(leaderboard, context))
+    {
+        context.Query.skipResultToRank = start;
+        context.Query.maxItems = count;
+        return GetLeaderboardEntries(context);
+    }
+    return true;
+}
+
+bool OnlinePlatformXboxLive::GetLeaderboardEntriesAroundUser(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries, int32 start, int32 count)
+{
+    XblLeaderboardsContext context;
+    if (GetLeaderboardContext(leaderboard, context))
+    {
+        uint64_t xboxUserId;
+        XblContextGetXboxUserId(context.Context, &xboxUserId);
+        context.Query.skipToXboxUserId = xboxUserId;
+        context.Query.maxItems = count;
+        if (start != 0)
+            LOG(Warning, "Xbox Live doesn't support reading leaderboard entries before the player (only after).");
+        return GetLeaderboardEntries(context);
+    }
+    return true;
+}
+
+bool OnlinePlatformXboxLive::GetLeaderboardEntriesForFriends(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries)
+{
+    XblLeaderboardsContext context;
+    if (GetLeaderboardContext(leaderboard, context))
+    {
+        context.Query.socialGroup = XblSocialGroupType::People;
+        return GetLeaderboardEntries(context);
+    }
+    return true;
+}
+
+bool OnlinePlatformXboxLive::GetLeaderboardEntriesForUsers(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries, const Array<OnlineUser, HeapAllocation>& users)
+{
+    XblLeaderboardsContext context;
+    if (GetLeaderboardContext(leaderboard, context))
+    {
+        Array<OnlineLeaderboardEntry> tmp;
+        entries.Resize(users.Count());
+        for (int32 i = 0; i < users.Count(); i++)
+        {
+            context.Query.skipToXboxUserId = GetXboxUserId(users[i].Id);
+            context.Query.maxItems = 1;
+            context.Entries = &tmp;
+            if (GetLeaderboardEntries(context))
+                return true;
+            entries[i] = tmp.HasItems() ? tmp[0] : OnlineLeaderboardEntry();
+            tmp.Clear();
+        }
+        return false;
+    }
+    return true;
+}
+
+bool OnlinePlatformXboxLive::SetLeaderboardEntry(const OnlineLeaderboard& leaderboard, int32 score, bool keepBest)
+{
+#if !BUILD_RELEASE
+    LOG(Warning, "OnlinePlatformXboxLive::SetLeaderboardEntry is not supported");
+#endif
+    return true;
+}
+
 bool OnlinePlatformXboxLive::GetSaveGame(const StringView& name, Array<byte>& data, User* localUser)
 {
+    PROFILE_CPU();
     XGameSaveProviderHandle provider;
     if (GetSaveGameProvider(localUser, provider))
     {
@@ -716,6 +880,7 @@ bool OnlinePlatformXboxLive::GetSaveGame(const StringView& name, Array<byte>& da
 
 bool OnlinePlatformXboxLive::SetSaveGame(const StringView& name, const Span<byte>& data, User* localUser)
 {
+    PROFILE_CPU();
     XGameSaveProviderHandle provider;
     if (GetSaveGameProvider(localUser, provider))
     {
@@ -792,6 +957,38 @@ bool OnlinePlatformXboxLive::GetSaveGameProvider(User*& localUser, XGameSaveProv
     }
 
     return false;
+}
+
+bool OnlinePlatformXboxLive::GetLeaderboardContext(const OnlineLeaderboard& leaderboard, XblLeaderboardsContext& context) const
+{
+    // GetLeaderboard puts leaderboard info into Identifier
+    Array<String> parts;
+    leaderboard.Identifier.Split('|', parts);
+    if (parts.Count() != 2)
+        return false;
+    context.Name = StringAnsi(parts[0]);
+    User* localUser = nullptr;
+    if (StringUtils::Parse(parts[1].Get(), parts[1].Length(), (uintptr*)&localUser))
+        return false;
+
+    // Init query context
+    const char* scid = nullptr;
+    XblGetScid(&scid);
+    Platform::MemoryCopy(context.Query.scid, scid, sizeof(context.Query.scid));
+    context.Query.leaderboardName = context.Name.Get();
+
+    return GetContext(localUser, context.Context);
+}
+
+bool OnlinePlatformXboxLive::GetLeaderboardEntries(XblLeaderboardsContext& context) const
+{
+    XAsyncBlock ab = {};
+    ab.queue = _taskQueue;
+    ab.callback = OnGetLeaderboard;
+    ab.context = &context;
+    HRESULT result = XblLeaderboardGetLeaderboardAsync(context.Context, context.Query, &ab);
+    XBOX_LIVE_CHECK_RETURN("XblLeaderboardGetLeaderboardAsync");
+    return XblSyncWait(context, _taskQueue);
 }
 
 bool OnlinePlatformXboxLive::GetContext(User*& localUser, XblContext*& context) const

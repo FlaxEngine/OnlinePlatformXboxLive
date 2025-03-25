@@ -37,11 +37,20 @@ public:
 #endif
     bool GetStat(const StringView& name, float& value, User* localUser) override;
     bool SetStat(const StringView& name, float value, User* localUser) override;
-    bool GetSaveGame(const StringView& name, API_PARAM(Out) Array<byte, HeapAllocation>& data, User* localUser) override;
+    bool GetLeaderboard(const StringView& name, OnlineLeaderboard& value, User* localUser) override;
+    bool GetOrCreateLeaderboard(const StringView& name, OnlineLeaderboardSortModes sortMode, OnlineLeaderboardValueFormats valueFormat, OnlineLeaderboard& value, User* localUser) override;
+    bool GetLeaderboardEntries(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries, int32 start, int32 count) override;
+    bool GetLeaderboardEntriesAroundUser(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries, int32 start, int32 count) override;
+    bool GetLeaderboardEntriesForFriends(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries) override;
+    bool GetLeaderboardEntriesForUsers(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries, const Array<OnlineUser, HeapAllocation>& users) override;
+    bool SetLeaderboardEntry(const OnlineLeaderboard& leaderboard, int32 score, bool keepBest) override;
+    bool GetSaveGame(const StringView& name, Array<byte, HeapAllocation>& data, User* localUser) override;
     bool SetSaveGame(const StringView& name, const Span<byte>& data, User* localUser) override;
 
 private:
     bool GetSaveGameProvider(User*& localUser, XGameSaveProvider*& provider);
+    bool GetLeaderboardContext(const OnlineLeaderboard& leaderboard, struct XblLeaderboardsContext& context) const;
+    bool GetLeaderboardEntries(XblLeaderboardsContext& context) const;
     bool GetContext(User*& localUser, XblContext*& context) const;
     void OnUpdate();
 };
