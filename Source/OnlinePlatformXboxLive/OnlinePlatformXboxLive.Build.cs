@@ -2,6 +2,7 @@
 
 using Flax.Build;
 using Flax.Build.NativeCpp;
+using Flax.Build.Platforms;
 
 /// <summary>
 /// Online services module for Xbox Live platform.
@@ -15,9 +16,11 @@ public class OnlinePlatformXboxLive : GameModule
 
         options.PublicDependencies.Add("Online");
 
-        if (options.Platform is Flax.Build.Platforms.GDKPlatform)
+        if (options.Toolchain is GDKToolchain gdkToolchain)
         {
-            options.Libraries.Add("libHttpClient.142.GDK.C.lib");
+            var xboxServicesToolset = gdkToolchain.XboxServicesToolset;
+            options.Libraries.Add($"libHttpClient.{(int)xboxServicesToolset}.GDK.C.lib");
+            options.Libraries.Add("XCurl.lib");
             options.Libraries.Add("Crypt32.lib");
         }
     }
