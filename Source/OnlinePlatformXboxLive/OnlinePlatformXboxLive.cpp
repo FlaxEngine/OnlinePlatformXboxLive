@@ -8,25 +8,27 @@
 #include "Engine/Core/Collections/Array.h"
 #include "Engine/Core/Config/PlatformSettings.h"
 #include "Engine/Engine/Engine.h"
+#include "Engine/Content/Assets/Texture.h"
 #include "Engine/Profiler/ProfilerCPU.h"
 #include "Engine/Platform/User.h"
 #include "Engine/Platform/Win32/IncludeWindowsHeaders.h"
 #include <XGameRuntime.h>
 #include <xsapi-c/services_c.h>
 
+#define XBOX_LIVE_LOG_IMPL(method, result) LOG(Error, "[Xbox Live] Method {0} failed with result 0x{1:x}", TEXT(method), (uint32)result)
 #define XBOX_LIVE_LOG(method) \
         if (FAILED(result)) \
-            LOG(Error, "Xbox Live method {0} failed with result 0x{1:x}", TEXT(method), (uint32)result)
+            XBOX_LIVE_LOG_IMPL(method, result);
 #define XBOX_LIVE_CHECK(method) \
         if (FAILED(result)) \
         { \
-            LOG(Error, "Xbox Live method {0} failed with result 0x{1:x}", TEXT(method), (uint32)result); \
+            XBOX_LIVE_LOG_IMPL(method, result); \
             return; \
         }
 #define XBOX_LIVE_CHECK_RETURN(method) \
         if (FAILED(result)) \
         { \
-            LOG(Error, "Xbox Live method {0} failed with result 0x{1:x}", TEXT(method), (uint32)result); \
+            XBOX_LIVE_LOG_IMPL(method, result); \
             return true; \
         }
 
@@ -74,7 +76,12 @@ struct XblStatsContext : XblSyncContext
 
 struct XblPresenceContext : XblSyncContext
 {
-    OnlinePresenceStates Presence;
+    OnlinePresenceStates Presence = OnlinePresenceStates::Online;
+};
+
+struct XblPictureContext : XblSyncContext
+{
+    Texture* Texture = nullptr;
 };
 
 struct XblFriendsContext : XblSyncContext
@@ -310,6 +317,32 @@ void CALLBACK OnGetPresence(_In_ XAsyncBlock* ab)
     // Failed
     presenceContext->Failed = true;
     presenceContext->Active = false;
+}
+
+void CALLBACK OnGetPicture(_In_ XAsyncBlock* ab)
+{
+    PROFILE_CPU();
+    XblPictureContext* pictureContext = (XblPictureContext*)ab->context;
+    size_t bufferSize = 0, bufferUsed = 0;
+    HRESULT result = XUserGetGamerPictureResultSize(ab, &bufferSize);
+    XBOX_LIVE_LOG("XUserGetGamerPictureResultSize");
+    Array<byte> buffer;
+    buffer.Resize((int32)bufferSize);
+    result = XUserGetGamerPictureResult(ab, bufferSize, buffer.Get(), &bufferUsed);
+    XBOX_LIVE_LOG("XUserGetGamerPictureResult");
+    buffer.Resize((int32)bufferUsed);
+    if (SUCCEEDED(result))
+    {
+        // The returned gamer picture is a .PNG formatted image
+        pictureContext->Texture = Texture::FromMemory(ToSpan(buffer), ImageFormat::PNG);
+        pictureContext->Failed = false;
+        pictureContext->Active = false;
+        return;
+    }
+
+    // Failed
+    pictureContext->Failed = true;
+    pictureContext->Active = false;
 }
 
 void CALLBACK OnGetFriendsIds(_In_ XAsyncBlock* ab)
@@ -582,7 +615,6 @@ bool OnlinePlatformXboxLive::GetUser(OnlineUser& user, User* localUser)
         user.Name.SetUTF8(gamerTag, StringUtils::Length(gamerTag));
 
         XblPresenceContext presenceContext;
-        presenceContext.Presence = OnlinePresenceStates::Online;
         XAsyncBlock ab;
         ab.queue = _taskQueue;
         ab.callback = OnGetPresence;
@@ -593,6 +625,33 @@ bool OnlinePlatformXboxLive::GetUser(OnlineUser& user, User* localUser)
         else
             XBOX_LIVE_LOG("XblPresenceGetPresenceAsync");
         user.PresenceState = presenceContext.Presence;
+    }
+    return true;
+}
+
+bool OnlinePlatformXboxLive::GetUserAvarar(const OnlineUser& user, Texture*& avatar)
+{
+    XblContextHandle context;
+    if (GetContext(context))
+    {
+        uint64_t xboxUserId = GetXboxUserId(user.Id);
+        XUserHandle xboxUser;
+        HRESULT result = XUserFindUserById(xboxUserId, &xboxUser);
+        XBOX_LIVE_CHECK_RETURN_EX("XUserFindUserById", nullptr);
+        XblPictureContext pictureContext;
+        XAsyncBlock ab;
+        ab.queue = _taskQueue;
+        ab.callback = OnGetPicture;
+        ab.context = &pictureContext;
+        auto pictureSize = XUserGamerPictureSize::Small; // 64x64
+        result = XUserGetGamerPictureAsync(xboxUser, pictureSize, &ab);
+        if (SUCCEEDED(result))
+            XblSyncWait(pictureContext, _taskQueue);
+        else
+            XBOX_LIVE_LOG("XUserGetGamerPictureAsync");
+        avatar = pictureContext.Texture;
+        return false;
+
     }
     return true;
 }
@@ -989,6 +1048,16 @@ bool OnlinePlatformXboxLive::GetLeaderboardEntries(XblLeaderboardsContext& conte
     HRESULT result = XblLeaderboardGetLeaderboardAsync(context.Context, context.Query, &ab);
     XBOX_LIVE_CHECK_RETURN("XblLeaderboardGetLeaderboardAsync");
     return XblSyncWait(context, _taskQueue);
+}
+
+bool OnlinePlatformXboxLive::GetContext(XblContext*& context) const
+{
+    for (auto& e : _users)
+    {
+        context = e.Value;
+        return true;
+    }
+    return false;
 }
 
 bool OnlinePlatformXboxLive::GetContext(User*& localUser, XblContext*& context) const
