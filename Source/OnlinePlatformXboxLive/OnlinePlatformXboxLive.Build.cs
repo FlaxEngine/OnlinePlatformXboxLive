@@ -18,8 +18,14 @@ public class OnlinePlatformXboxLive : GameModule
 
         if (options.Toolchain is GDKToolchain gdkToolchain)
         {
-            var xboxServicesToolset = gdkToolchain.XboxServicesToolset;
-            options.Libraries.Add($"libHttpClient.{(int)xboxServicesToolset}.GDK.C.lib");
+            if (GDK.Instance.Version.Major >= 250402)
+            {
+                options.Libraries.Add("libHttpClient.GDK.lib");
+            }
+            else
+            {
+                options.Libraries.Add($"libHttpClient.{(int)gdkToolchain.XboxServicesToolset}.GDK.C.lib");
+            }
             options.Libraries.Add("XCurl.lib");
             options.Libraries.Add("Crypt32.lib");
         }
