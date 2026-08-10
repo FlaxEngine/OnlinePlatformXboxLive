@@ -11,7 +11,7 @@
 /// <summary>
 /// The online platform implementation for Xbox Live.
 /// </summary>
-API_CLASS(Sealed, Namespace="FlaxEngine.Online.XboxLive") class ONLINEPLATFORMXBOXLIVE_API OnlinePlatformXboxLive : public ScriptingObject, public IOnlinePlatform
+API_CLASS(Sealed, Namespace="FlaxEngine.Online") class ONLINEPLATFORMXBOXLIVE_API OnlinePlatformXboxLive : public ScriptingObject, public IOnlinePlatform
 {
     DECLARE_SCRIPTING_TYPE(OnlinePlatformXboxLive);
 private:
