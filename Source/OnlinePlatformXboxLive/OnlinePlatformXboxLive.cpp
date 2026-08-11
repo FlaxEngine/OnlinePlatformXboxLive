@@ -10,6 +10,7 @@
 #include "Engine/Engine/Engine.h"
 #include "Engine/Content/Assets/Texture.h"
 #include "Engine/Profiler/ProfilerCPU.h"
+#include "Engine/Profiler/ProfilerMemory.h"
 #include "Engine/Platform/User.h"
 #include "Engine/Platform/Win32/IncludeWindowsHeaders.h"
 #include <XGameRuntime.h>
@@ -506,6 +507,9 @@ OnlinePlatformXboxLive::OnlinePlatformXboxLive(const SpawnParams& params)
 
 bool OnlinePlatformXboxLive::Initialize()
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
+
     // Initialize
     uint32_t titleId = 0;
     HRESULT result = S_OK;
@@ -544,6 +548,8 @@ bool OnlinePlatformXboxLive::Initialize()
 
 void OnlinePlatformXboxLive::Deinitialize()
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     for (const auto& e : _gameSaveProviders)
         XGameSaveCloseProvider(e.Value);
     _gameSaveProviders.Clear();
@@ -562,6 +568,8 @@ void OnlinePlatformXboxLive::Deinitialize()
 
 bool OnlinePlatformXboxLive::UserLogin(User* localUser)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     if (Platform::Users.Count() == 0)
         return true;
     if (!localUser)
@@ -577,6 +585,8 @@ bool OnlinePlatformXboxLive::UserLogin(User* localUser)
 
 bool OnlinePlatformXboxLive::UserLogout(User* localUser)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     if (Platform::Users.Count() == 0)
         return true;
     if (!localUser)
@@ -602,6 +612,8 @@ bool OnlinePlatformXboxLive::GetUserLoggedIn(User* localUser)
 
 bool OnlinePlatformXboxLive::GetUser(OnlineUser& user, User* localUser)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblContextHandle context;
     if (GetContext(localUser, context))
     {
@@ -631,13 +643,15 @@ bool OnlinePlatformXboxLive::GetUser(OnlineUser& user, User* localUser)
 
 bool OnlinePlatformXboxLive::GetUserAvarar(const OnlineUser& user, Texture*& avatar)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblContextHandle context;
     if (GetContext(context))
     {
         uint64_t xboxUserId = GetXboxUserId(user.Id);
         XUserHandle xboxUser;
         HRESULT result = XUserFindUserById(xboxUserId, &xboxUser);
-        XBOX_LIVE_CHECK_RETURN_EX("XUserFindUserById", nullptr);
+        XBOX_LIVE_CHECK_RETURN("XUserFindUserById");
         XblPictureContext pictureContext;
         XAsyncBlock ab;
         ab.queue = _taskQueue;
@@ -658,6 +672,8 @@ bool OnlinePlatformXboxLive::GetUserAvarar(const OnlineUser& user, Texture*& ava
 
 bool OnlinePlatformXboxLive::GetFriends(Array<OnlineUser>& friends, User* localUser)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblContextHandle context;
     if (GetContext(localUser, context))
     {
@@ -691,6 +707,8 @@ bool OnlinePlatformXboxLive::GetFriends(Array<OnlineUser>& friends, User* localU
 
 bool OnlinePlatformXboxLive::GetAchievements(Array<OnlineAchievement>& achievements, User* localUser)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblContextHandle context;
     if (GetContext(localUser, context))
     {
@@ -716,6 +734,8 @@ bool OnlinePlatformXboxLive::UnlockAchievement(const StringView& name, User* loc
 
 bool OnlinePlatformXboxLive::UnlockAchievementProgress(const StringView& name, float progress, User* localUser)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblContextHandle context;
     if (GetContext(localUser, context))
     {
@@ -747,6 +767,8 @@ bool OnlinePlatformXboxLive::ResetAchievements(User* localUser)
 
 bool OnlinePlatformXboxLive::GetStat(const StringView& name, float& value, User* localUser)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblContextHandle context;
     if (GetContext(localUser, context))
     {
@@ -770,6 +792,8 @@ bool OnlinePlatformXboxLive::GetStat(const StringView& name, float& value, User*
 
 bool OnlinePlatformXboxLive::SetStat(const StringView& name, float value, User* localUser)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblContextHandle context;
     if (GetContext(localUser, context))
     {
@@ -791,6 +815,8 @@ bool OnlinePlatformXboxLive::SetStat(const StringView& name, float value, User* 
 
 bool OnlinePlatformXboxLive::GetLeaderboard(const StringView& name, OnlineLeaderboard& value, User* localUser)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblContextHandle context;
     if (GetContext(localUser, context))
     {
@@ -809,6 +835,8 @@ bool OnlinePlatformXboxLive::GetOrCreateLeaderboard(const StringView& name, Onli
 
 bool OnlinePlatformXboxLive::GetLeaderboardEntries(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries, int32 start, int32 count)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblLeaderboardsContext context;
     if (GetLeaderboardContext(leaderboard, context))
     {
@@ -821,6 +849,8 @@ bool OnlinePlatformXboxLive::GetLeaderboardEntries(const OnlineLeaderboard& lead
 
 bool OnlinePlatformXboxLive::GetLeaderboardEntriesAroundUser(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries, int32 start, int32 count)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblLeaderboardsContext context;
     if (GetLeaderboardContext(leaderboard, context))
     {
@@ -837,6 +867,8 @@ bool OnlinePlatformXboxLive::GetLeaderboardEntriesAroundUser(const OnlineLeaderb
 
 bool OnlinePlatformXboxLive::GetLeaderboardEntriesForFriends(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblLeaderboardsContext context;
     if (GetLeaderboardContext(leaderboard, context))
     {
@@ -848,6 +880,8 @@ bool OnlinePlatformXboxLive::GetLeaderboardEntriesForFriends(const OnlineLeaderb
 
 bool OnlinePlatformXboxLive::GetLeaderboardEntriesForUsers(const OnlineLeaderboard& leaderboard, Array<OnlineLeaderboardEntry, HeapAllocation>& entries, const Array<OnlineUser, HeapAllocation>& users)
 {
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
     XblLeaderboardsContext context;
     if (GetLeaderboardContext(leaderboard, context))
     {
@@ -879,6 +913,7 @@ bool OnlinePlatformXboxLive::SetLeaderboardEntry(const OnlineLeaderboard& leader
 bool OnlinePlatformXboxLive::GetSaveGame(const StringView& name, Array<byte>& data, User* localUser)
 {
     PROFILE_CPU();
+    PROFILE_MEM(Online);
     XGameSaveProviderHandle provider;
     if (GetSaveGameProvider(localUser, provider))
     {
@@ -940,6 +975,7 @@ bool OnlinePlatformXboxLive::GetSaveGame(const StringView& name, Array<byte>& da
 bool OnlinePlatformXboxLive::SetSaveGame(const StringView& name, const Span<byte>& data, User* localUser)
 {
     PROFILE_CPU();
+    PROFILE_MEM(Online);
     XGameSaveProviderHandle provider;
     if (GetSaveGameProvider(localUser, provider))
     {
@@ -994,6 +1030,7 @@ bool OnlinePlatformXboxLive::GetSaveGameProvider(User*& localUser, XGameSaveProv
         localUser = Platform::Users.First();
     if (_gameSaveProviders.TryGet(localUser, provider))
         return true;
+    PROFILE_CPU();
 
     // Initialize gamesave provider for this user
     const char* scid = nullptr;
@@ -1071,6 +1108,8 @@ bool OnlinePlatformXboxLive::GetContext(User*& localUser, XblContext*& context) 
 
 void OnlinePlatformXboxLive::OnUpdate()
 {
+    PROFILE_CPU();
+
     // Flush task queue events
     while (XTaskQueueDispatch(_taskQueue, XTaskQueuePort::Completion, 0))
     {
