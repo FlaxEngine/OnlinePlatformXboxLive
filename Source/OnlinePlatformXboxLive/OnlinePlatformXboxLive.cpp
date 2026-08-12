@@ -16,16 +16,10 @@
 #include <XGameRuntime.h>
 #include <xsapi-c/services_c.h>
 
-#define XBOX_LIVE_LOG_IMPL(method, result) LOG(Error, "[Xbox Live] Method {0} failed with result 0x{1:x}", TEXT(method), (uint32)result)
+#define XBOX_LIVE_LOG_IMPL(method, result) LOG(Error, "[Xbox Live] Method {0} (line: {1}) failed with result 0x{2:x}", TEXT(method), __LINE__, (uint32)result)
 #define XBOX_LIVE_LOG(method) \
         if (FAILED(result)) \
             XBOX_LIVE_LOG_IMPL(method, result);
-#define XBOX_LIVE_CHECK(method) \
-        if (FAILED(result)) \
-        { \
-            XBOX_LIVE_LOG_IMPL(method, result); \
-            return; \
-        }
 #define XBOX_LIVE_CHECK_RETURN(method) \
         if (FAILED(result)) \
         { \
@@ -498,6 +492,25 @@ void CALLBACK OnGetLeaderboard(_In_ XAsyncBlock* ab)
     // Failed
     context->Failed = true;
     context->Active = false;
+}
+
+void CALLBACK OnShowUI(_In_ XAsyncBlock* ab)
+{
+    PROFILE_CPU();
+    auto dialog = (OnlineOverlayDialog)(intptr)ab->context;
+    HRESULT result;
+    switch (dialog)
+    {
+    case OnlineOverlayDialog::Profile:
+        result = XGameUiShowPlayerProfileCardResult(ab);
+        XBOX_LIVE_LOG("XGameUiShowPlayerProfileCardResult");
+        break;
+    case OnlineOverlayDialog::Achievements:
+         result = XGameUiShowAchievementsResult(ab);
+        XBOX_LIVE_LOG("XGameUiShowAchievementsResult");
+        break;
+    }
+    delete ab;
 }
 
 OnlinePlatformXboxLive::OnlinePlatformXboxLive(const SpawnParams& params)
@@ -1020,6 +1033,65 @@ bool OnlinePlatformXboxLive::SetSaveGame(const StringView& name, const Span<byte
         return FAILED(result);
     }
     return true;
+}
+
+bool OnlinePlatformXboxLive::OpenOverlay(OnlineOverlayDialog dialog)
+{
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
+    switch (dialog)
+    {
+    case OnlineOverlayDialog::Login:
+        Platform::SignInWithUI(false);
+        return false;
+    case OnlineOverlayDialog::Website:
+        return OpenOverlayUrl(String::Empty, dialog);
+    case OnlineOverlayDialog::Profile:
+    case OnlineOverlayDialog::Achievements:
+    {
+        // Show UI for the first local user
+        if (_users.IsEmpty())
+            return true;
+        User* localUser = _users.Begin()->Key;
+        XAsyncBlock* ab = new XAsyncBlock();
+        ab->queue = _taskQueue;
+        ab->callback = OnShowUI;
+        ab->context = (void*)dialog;
+        HRESULT result;
+        switch (dialog)
+        {
+        case OnlineOverlayDialog::Profile:
+            result = XGameUiShowPlayerProfileCardAsync(ab, localUser->UserHandle, _titleId);
+            XBOX_LIVE_CHECK_RETURN("XGameUiShowPlayerProfileCardAsync");
+            break;
+        case OnlineOverlayDialog::Achievements:
+            result = XGameUiShowAchievementsAsync(ab, localUser->UserHandle, _titleId);
+            XBOX_LIVE_CHECK_RETURN("XGameUiShowAchievementsAsync");
+            break;
+        default:
+            return true;
+        }
+        return false;
+    }
+    }
+    return true;
+}
+
+bool OnlinePlatformXboxLive::OpenOverlayUrl(const StringView& url, OnlineOverlayDialog dialog)
+{
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
+    if (Platform::CanOpenUrl(url))
+    {
+        Platform::OpenUrl(url);
+        return false;
+    }
+    return true;
+}
+
+bool OnlinePlatformXboxLive::OpenOverlayUser(const OnlineUser& user, OnlineOverlayDialog dialog)
+{
+    return OpenOverlay(dialog);
 }
 
 bool OnlinePlatformXboxLive::GetSaveGameProvider(User*& localUser, XGameSaveProvider*& provider)
