@@ -660,7 +660,7 @@ bool OnlinePlatformXboxLive::GetUser(OnlineUser& user, User* localUser)
     return true;
 }
 
-bool OnlinePlatformXboxLive::GetUserAvarar(const OnlineUser& user, Texture*& avatar)
+bool OnlinePlatformXboxLive::GetUserAvatar(const OnlineUser& user, Texture*& avatar)
 {
     PROFILE_CPU();
     PROFILE_MEM(Online);
