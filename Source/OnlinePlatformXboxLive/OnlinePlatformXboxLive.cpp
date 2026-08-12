@@ -430,8 +430,7 @@ void CALLBACK OnGetFriendsProfiles(_In_ XAsyncBlock* ab)
                 OnlineUser& f = friendsContext->Friends->At(i);
                 f.Id = GetUserId(profile.xboxUserId);
                 f.Name = profile.modernGamertag;
-                // TODO: query presence for friends
-                f.PresenceState = OnlinePresenceStates::Online;
+                // TODO: query presence for friends (PresenceStatus, PresenceState, GameId) via XblPresenceGetPresenceForMultipleUsersAsync
             }
         }
 
@@ -579,6 +578,13 @@ void OnlinePlatformXboxLive::Deinitialize()
     }
 }
 
+Guid OnlinePlatformXboxLive::GetGameId()
+{
+    const char* scid = nullptr;
+    XblGetScid(&scid);
+    return Guid(StringUtils::GetHashCode(scid), 0, 0, 0);
+}
+
 bool OnlinePlatformXboxLive::UserLogin(User* localUser)
 {
     PROFILE_CPU();
@@ -714,6 +720,31 @@ bool OnlinePlatformXboxLive::GetFriends(Array<OnlineUser>& friends, User* localU
         result = XblProfileGetUserProfilesAsync(context, friendsContext.FriendsIds.Get(), friendsContext.FriendsIds.Count(), &ab);
         XBOX_LIVE_CHECK_RETURN("XblProfileGetUserProfilesAsync");
         return XblSyncWait(friendsContext, _taskQueue);
+    }
+    return true;
+}
+
+bool OnlinePlatformXboxLive::SetPresence(const StringView& status, User* localUser)
+{
+    PROFILE_CPU();
+    PROFILE_MEM(Online);
+    XblContextHandle context;
+    if (GetContext(localUser, context))
+    {
+        XblPresenceRichPresenceIds richPresenceIds;
+        Platform::MemoryClear(&richPresenceIds, sizeof(richPresenceIds));
+        const char* scid = nullptr;
+        XblGetScid(&scid);
+        Platform::MemoryCopy(richPresenceIds.scid, scid, sizeof(richPresenceIds.scid));
+        StringAsANSI<> statusAnsi(status.Get(), status.Length());
+        richPresenceIds.presenceId = statusAnsi.Get();
+        XAsyncBlock ab;
+        ab.queue = _taskQueue;
+        ab.callback = nullptr;
+        ab.context = nullptr;
+        HRESULT result = XblPresenceSetPresenceAsync(context, true, &richPresenceIds, &ab);
+        XBOX_LIVE_CHECK_RETURN("XblPresenceSetPresenceAsync");
+        return false;
     }
     return true;
 }
